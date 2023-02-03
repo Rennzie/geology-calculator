@@ -3,7 +3,7 @@ A toolkit for calculations a field geologist would need
 
 
 ## Why
-I'm used to be an exploration geologist, and these calculations are the type of thing I did all the time. There are other softwares out there but non that run in a browser. 
+I used to be an exploration geologist, and these calculations are the type of thing I did all the time. There are other softwares out there but non that run in a browser. I also want decent project to build using Rust so I can get a better grip on the language.
 
 
 ## Goals
