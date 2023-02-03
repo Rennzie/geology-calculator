@@ -1,18 +1,20 @@
 use core::f64::consts::{FRAC_PI_2, FRAC_PI_3, PI};
 use na::{Matrix3, Vector3};
+use serde::{Deserialize, Serialize};
 
 use crate::validation;
 use validation::error_if_out_of_range;
 
 use super::OrientationLine;
 
+#[derive(Debug, Deserialize)]
 pub struct RawMeasurement {
     pub depth: f64,
     pub alpha: f64,
     pub beta: f64,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Serialize)]
 pub struct Plane {
     pub strike: f64,
     pub dip: f64,
@@ -37,9 +39,9 @@ impl Plane {
         let trend = trend.unwrap_or(strike + 90.0);
         let plunge = plunge.unwrap_or(90.0 - dip);
 
-        error_if_out_of_range(&dip_direction, 0.0, 360.0).unwrap();
-        error_if_out_of_range(&trend, 0.0, 360.0).unwrap();
-        error_if_out_of_range(&plunge, 0.0, 90.0).unwrap();
+        // error_if_out_of_range(&dip_direction, 0.0, 360.0).unwrap();
+        // error_if_out_of_range(&trend, 0.0, 360.0).unwrap();
+        // error_if_out_of_range(&plunge, 0.0, 90.0).unwrap();
 
         Self {
             strike,
@@ -97,7 +99,7 @@ impl Orient {
 
         let bearing = match orientation_line {
             OrientationLine::Top => bearing,
-            OrientationLine::Bottom => bearing - 180.0,
+            OrientationLine::Bottom => bearing + 180.0,
         };
 
         Self {
@@ -123,9 +125,11 @@ impl Orient {
             strike - PI
         };
 
+        let dip = FRAC_PI_2 - plunge;
+
         Plane::new(
             strike.to_degrees(),
-            plunge.to_degrees(),
+            dip.to_degrees(),
             Some(dip_direction.to_degrees()),
             Some(trend.to_degrees()),
             Some(plunge.to_degrees()),

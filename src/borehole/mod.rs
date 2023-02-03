@@ -1,6 +1,8 @@
 pub mod measurement;
 use std::cmp::Ordering;
 
+use serde::Deserialize;
+
 use self::measurement::{Plane, RawMeasurement};
 
 #[derive(Debug, Clone, Copy)]
@@ -15,7 +17,7 @@ impl Default for OrientationLine {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct HoleOrientation {
     pub depth: f64,
     pub bearing: f64,
@@ -108,8 +110,6 @@ fn map_measurements_to_depths(
             )
         })
         .collect::<Vec<Plane>>();
-
-    println!("measurements: {measurements:#?}");
 
     measurements
 }

@@ -2,115 +2,69 @@ mod borehole;
 mod validation;
 
 extern crate nalgebra as na;
-use borehole::measurement::Plane as BoreholeMeasurement;
+
+use std::fs::File;
+
 use clap::Parser;
 
-use crate::borehole::{measurement::RawMeasurement, Borehole};
+use crate::borehole::{measurement::RawMeasurement, Borehole, HoleOrientation};
+
+// use crate::borehole::{measurement::RawMeasurement, Borehole};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
-    /// Alpha core angle. Must be in range [0, 90]
+    /// Path to csv file containing borehole orientation data
+    /// Expected format:
+    /// depth,bearing,inclination
     #[arg(long)]
-    alpha: f64,
+    dh_orientation: String,
 
-    /// Beta core angle. Must be in range [0, 360]
+    /// Path to csv file containing borehole measurements
+    /// Expected format:
+    /// depth,alpha,beta
     #[arg(long)]
-    beta: f64,
+    dh_measurements: String,
 
-    /// Inclination. Must be in range [0, 90]
-    #[arg(long)]
-    inclination: f64,
-
-    /// Bearing. Must be in range [0, 360]
-    #[arg(long)]
-    bearing: f64,
+    /// Path to where the output CSV file should be written
+    #[arg(short, long)]
+    output: Option<String>,
 }
 
 fn main() {
-    let mut args = Args::parse();
-    args.inclination *= -1.0;
+    let args = Args::parse();
+
+    let mut ori_rdr = csv::Reader::from_path(args.dh_orientation).unwrap();
+    let hole_orientations = ori_rdr
+        .deserialize()
+        .into_iter()
+        .map(|result| {
+            let record: HoleOrientation = result.unwrap();
+            record
+        })
+        .collect();
+
+    let mut ori_rdr = csv::Reader::from_path(args.dh_measurements).unwrap();
+    let raw_measurements = ori_rdr
+        .deserialize()
+        .into_iter()
+        .map(|result| {
+            let record: RawMeasurement = result.unwrap();
+            record
+        })
+        .collect();
 
     let dh123 = Borehole::new(
         borehole::OrientationLine::Top,
-        vec![
-            RawMeasurement {
-                depth: 1.0,
-                alpha: 90.0,
-                beta: 0.0,
-            },
-            RawMeasurement {
-                depth: 10.0,
-                alpha: 90.0,
-                beta: 0.0,
-            },
-            RawMeasurement {
-                depth: 20.0,
-                alpha: 90.0,
-                beta: 0.0,
-            },
-            RawMeasurement {
-                depth: 30.0,
-                alpha: 90.0,
-                beta: 0.0,
-            },
-        ],
-        vec![
-            borehole::HoleOrientation {
-                depth: 0.0,
-                bearing: 0.0,
-                inclination: -45.0,
-            },
-            borehole::HoleOrientation {
-                depth: 12.5,
-                bearing: 0.0,
-                inclination: -45.0,
-            },
-            borehole::HoleOrientation {
-                depth: 16.0,
-                bearing: 0.0,
-                inclination: -45.0,
-            },
-            borehole::HoleOrientation {
-                depth: 22.0,
-                bearing: 0.0,
-                inclination: -45.0,
-            },
-            borehole::HoleOrientation {
-                depth: 30.0,
-                bearing: 0.0,
-                inclination: -45.0,
-            },
-        ],
+        raw_measurements,
+        hole_orientations,
     );
-
     println!("{:#?}", dh123.oriented_measurements);
-    println!("Alpha {:?}", args.alpha);
-    println!("Beta {:?}", args.beta);
-    println!("Inclination {:?}", args.inclination);
-    println!("Bearing {:?}", args.bearing);
-    println!("------------------\n");
 
-    let oriented_measurement = BoreholeMeasurement::alpha_beta(
-        args.bearing,
-        args.inclination,
-        args.alpha,
-        args.beta,
-        borehole::OrientationLine::Top,
-    );
-
-    println!(
-        "Trend: {}, Plunge: {}",
-        oriented_measurement.trend.round(),
-        oriented_measurement.plunge.round()
-    );
-    println!(
-        "Strike: {}, Dip: {}",
-        oriented_measurement.strike.round(),
-        oriented_measurement.dip.round()
-    );
-    assert!(
-        oriented_measurement.trend.round() == 0.0 && oriented_measurement.plunge.round() == 45.0,
-        "Expected trend 0.0 and plunge 45.0"
-    );
+    let file = File::create(args.output.unwrap()).unwrap();
+    let mut writer = csv::Writer::from_writer(file);
+    for measurement in dh123.oriented_measurements {
+        writer.serialize(measurement).unwrap();
+    }
+    writer.flush().unwrap();
 }
