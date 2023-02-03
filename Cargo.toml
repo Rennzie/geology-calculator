@@ -1,0 +1,11 @@
+[package]
+name = "geology-calculator"
+version = "0.1.0"
+edition = "2021"
+description = "A library for doing geological calculations any field geologist would need"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+clap = {version =  "4.1.4", features = ["derive"]}
+nalgebra = "0.32.1"
