@@ -1,24 +1,22 @@
 pub mod measurement;
+use self::measurement::{Plane, RawMeasurement};
+use serde::Deserialize;
 use std::cmp::Ordering;
 
-use serde::Deserialize;
-
-use self::measurement::{Plane, RawMeasurement};
-
 #[derive(Debug, Clone, Copy)]
-pub enum OrientationLine {
+pub enum BHOrientationLine {
     Top,
     Bottom,
 }
 
-impl Default for OrientationLine {
+impl Default for BHOrientationLine {
     fn default() -> Self {
         Self::Top
     }
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct HoleOrientation {
+pub struct BHOrientation {
     pub depth: f64,
     pub bearing: f64,
     pub inclination: f64,
@@ -28,17 +26,17 @@ pub struct Borehole {
     /// Oriented structural measurements with alpha and beta angles relative to the borehole `orientation_line`
     pub oriented_measurements: Vec<Plane>,
     /// The location of the orientation line on the borehole
-    pub orientation_line: OrientationLine,
+    pub orientation_line: BHOrientationLine,
     /// A vector of whole depths with bearing and inclination.
     /// The fist value MUST have depth 0.0
-    pub hole_orientation: Vec<HoleOrientation>,
+    pub hole_orientation: Vec<BHOrientation>,
 }
 
 impl Borehole {
     pub fn new(
-        orientation_line: OrientationLine,
+        orientation_line: BHOrientationLine,
         raw_measurements: Vec<RawMeasurement>,
-        hole_orientation: Vec<HoleOrientation>,
+        hole_orientation: Vec<BHOrientation>,
     ) -> Self {
         Self {
             oriented_measurements: map_measurements_to_depths(
@@ -52,14 +50,10 @@ impl Borehole {
     }
 }
 
-// create tuples of down hole measurements from raw measurements.
-// each measurement apart from the first and last are applied to half the
-// distance between the previous measurement and the next measurement.
-
 fn map_measurements_to_depths(
     raw_measurements: Vec<RawMeasurement>,
-    raw_orientation: &[HoleOrientation],
-    orientation_line: &OrientationLine,
+    raw_orientation: &[BHOrientation],
+    orientation_line: &BHOrientationLine,
 ) -> Vec<Plane> {
     // error if the first raw_orientation depth is not 0.0
     if raw_orientation[0].depth != 0.0 {
@@ -86,7 +80,7 @@ fn map_measurements_to_depths(
         }
     }
 
-    let measurements = raw_measurements
+    raw_measurements
         .into_iter()
         .map(|measurement| {
             let index = depth_pairs.binary_search_by(|(first, last)| {
@@ -109,9 +103,7 @@ fn map_measurements_to_depths(
                 *orientation_line,
             )
         })
-        .collect::<Vec<Plane>>();
-
-    measurements
+        .collect::<Vec<Plane>>()
 }
 
 // note: there's something interesting about this approach but it doesn't fully satisfy the halfway between measurements test.

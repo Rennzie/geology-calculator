@@ -1,11 +1,10 @@
+use super::BHOrientationLine;
+use crate::validation;
 use core::f64::consts::{FRAC_PI_2, FRAC_PI_3, PI};
 use na::{Matrix3, Vector3};
+use nalgebra::Unit;
 use serde::{Deserialize, Serialize};
-
-use crate::validation;
 use validation::error_if_out_of_range;
-
-use super::OrientationLine;
 
 #[derive(Debug, Deserialize)]
 pub struct RawMeasurement {
@@ -16,10 +15,24 @@ pub struct RawMeasurement {
 
 #[derive(Clone, Copy, Debug, Serialize)]
 pub struct Plane {
+    /// The strike of a planar structure in degrees
+    /// Strike is the angle between the north and the line of intersection of the plane with the horizontal plane
+    /// Strike is measured clockwise from north and has a value between 0° and 360°.
     pub strike: f64,
+    /// The dip of a planar structure in degrees
+    /// The dip is the angle between the horizontal plane and the plane of the structure.
+    /// The dip is measured from the horizontal plane and has a value between 0° and 90°.
     pub dip: f64,
+    /// The dip direction of a planar structure in degrees
+    /// The dip direction is the angle between the north the direction of the dip. It is perpendicular to the strike in the clockwise direction..
+    /// The dip direction is measured clockwise from north and a positive value between 0° and 360°.
     pub dip_direction: f64,
+    /// The angle between North and the downward pointing pole (normal vector) projected to the horizontal.
+    /// It can also be thought of as the azimuth of the pole to planar structure.
+    /// The angle is measured clockwise from north and can be between 0° and 360°. (Trend equals strike −90°, and dip direction −180°.)
     pub trend: f64,
+    /// The angle between the horizontal plane and the planar pole, i.e. the downward pointing normal vector of the plane.
+    /// The value of the angle is positive and can be between 0° and 90°. (plunge equals 90°—dip)
     pub plunge: f64,
 }
 
@@ -34,14 +47,19 @@ impl Plane {
         error_if_out_of_range(&strike, 0.0, 360.0).unwrap();
         error_if_out_of_range(&dip, 0.0, 90.0).unwrap();
 
-        let dip_direction = dip_direction.unwrap_or(strike + 90.0);
-        // NOTE: these are incorrect. I need to calculate the normal vector to the plane defined by strike and dip
-        let trend = trend.unwrap_or(strike + 90.0);
-        let plunge = plunge.unwrap_or(90.0 - dip);
+        let mut dip_direction = dip_direction.unwrap_or(strike + 90.0);
+        dip_direction = match dip_direction > 360.0 {
+            true => dip_direction - 360.0,
+            false => dip_direction,
+        };
+        error_if_out_of_range(&dip_direction, 0.0, 360.0).unwrap();
 
-        // error_if_out_of_range(&dip_direction, 0.0, 360.0).unwrap();
+        let plunge = plunge.unwrap_or(90.0 - dip);
+        error_if_out_of_range(&plunge, 0.0, 90.0).unwrap();
+
+        // NOTE: this are incorrect. I need to calculate the normal vector to the plane defined by strike and dip
+        let trend = trend.unwrap_or(strike + 90.0);
         // error_if_out_of_range(&trend, 0.0, 360.0).unwrap();
-        // error_if_out_of_range(&plunge, 0.0, 90.0).unwrap();
 
         Self {
             strike,
@@ -59,11 +77,42 @@ impl Plane {
         inclination: f64,
         alpha: f64,
         beta: f64,
-        orientation_line: OrientationLine,
+        orientation_line: BHOrientationLine,
     ) -> Self {
         let orient = Orient::new(bearing, inclination, alpha, beta, orientation_line);
         orient.into_plane()
     }
+}
+
+fn pole_to_plane(strike: f64, dip: f64, plunge: f64) -> Vector3<f64> {
+    let strike = strike.to_radians();
+    let dip = dip.to_radians();
+    let plunge = plunge.to_radians();
+
+    let rotation_matrix = Matrix3::new(
+        strike.cos(),
+        -strike.sin(),
+        0.0,
+        strike.sin(),
+        strike.cos(),
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+    ) * Matrix3::new(
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        dip.cos(),
+        -dip.sin(),
+        0.0,
+        dip.sin(),
+        dip.cos(),
+    ) * Matrix3::new(1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, plunge.cos());
+
+    let pole = Unit::new_normalize(rotation_matrix * Vector3::x());
+    pole.into_inner()
 }
 
 /// Definitions from https://www.sciencedirect.com/science/article/pii/S0098300413000551
@@ -71,10 +120,11 @@ impl Plane {
 #[derive(Clone, Copy, Debug)]
 struct Orient {
     /// The angle between North and the borehole trajectory projected to the horizontal.
-    /// The angle is measured clockwise from north and has a value between 0° and 360°.
+    /// The angle is measured clockwise from north and has a positive value between 0° and 360°.
     bearing: f64,
     /// Is defined as the acute angle between the horizontal plane and the trajectory of the borehole.
     /// The angle is measured from the horizontal plane and has a value between 0° and 90°.
+    /// It is negative if the borehole trajectory is pointing downwards.
     inclination: f64,
     /// The acute dihedral angle between the fracture plane and the trajectory of the borehole.
     /// The angle is restricted to be between 0° and 90°, where 90° corresponds to a fracture perpendicular to the borehole.
@@ -90,16 +140,20 @@ impl Orient {
         inclination: f64,
         alpha: f64,
         beta: f64,
-        orientation_line: OrientationLine,
+        orientation_line: BHOrientationLine,
     ) -> Self {
         error_if_out_of_range(&bearing, 0.0, 360.0).unwrap();
         error_if_out_of_range(&inclination, -90.0, 90.0).unwrap();
         error_if_out_of_range(&alpha, 0.0, 90.0).unwrap();
         error_if_out_of_range(&beta, 0.0, 360.0).unwrap();
 
-        let bearing = match orientation_line {
-            OrientationLine::Top => bearing,
-            OrientationLine::Bottom => bearing + 180.0,
+        let beta = match orientation_line {
+            BHOrientationLine::Top => beta,
+            BHOrientationLine::Bottom => match beta + 180.0 {
+                // ensure beta is between 0 and 360
+                x if x > 360.0 => x - 360.0,
+                x => x,
+            },
         };
 
         Self {

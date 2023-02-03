@@ -7,7 +7,7 @@ use std::fs::File;
 
 use clap::Parser;
 
-use crate::borehole::{measurement::RawMeasurement, Borehole, HoleOrientation};
+use crate::borehole::{measurement::RawMeasurement, BHOrientation, Borehole};
 
 // use crate::borehole::{measurement::RawMeasurement, Borehole};
 
@@ -39,7 +39,7 @@ fn main() {
         .deserialize()
         .into_iter()
         .map(|result| {
-            let record: HoleOrientation = result.unwrap();
+            let record: BHOrientation = result.unwrap();
             record
         })
         .collect();
@@ -55,7 +55,7 @@ fn main() {
         .collect();
 
     let dh123 = Borehole::new(
-        borehole::OrientationLine::Top,
+        borehole::BHOrientationLine::Top,
         raw_measurements,
         hole_orientations,
     );
