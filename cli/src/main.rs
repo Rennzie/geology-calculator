@@ -1,15 +1,6 @@
-mod borehole;
-mod structure;
-mod utils;
-mod validation;
-
-extern crate nalgebra as na;
-
-use std::fs::File;
-
 use clap::Parser;
-
-use crate::borehole::{BHOrientation, Borehole, RawMeasurement};
+use core::{BHOrientation, BHOrientationLine, Borehole, RawMeasurement};
+use std::fs::File;
 
 // use crate::borehole::{measurement::RawMeasurement, Borehole};
 
@@ -56,11 +47,7 @@ fn main() {
         })
         .collect();
 
-    let dh123 = Borehole::new(
-        borehole::BHOrientationLine::Top,
-        raw_measurements,
-        hole_orientations,
-    );
+    let dh123 = Borehole::new(BHOrientationLine::Top, raw_measurements, hole_orientations);
     println!("{:#?}", dh123.oriented_measurements);
 
     let file = File::create(args.output.unwrap()).unwrap();
