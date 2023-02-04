@@ -47,14 +47,10 @@ impl Plane {
         error_if_out_of_range(&strike, 0.0, 360.0).unwrap();
         error_if_out_of_range(&dip, 0.0, 90.0).unwrap();
 
-        let mut dip_direction = dip_direction.unwrap_or(strike + 90.0);
-        dip_direction = match dip_direction > 360.0 {
-            true => dip_direction - 360.0,
-            false => dip_direction,
-        };
+        let dip_direction = dip_direction.unwrap_or(dip_direction_from_strike(&strike));
         error_if_out_of_range(&dip_direction, 0.0, 360.0).unwrap();
 
-        let plunge = plunge.unwrap_or(90.0 - dip);
+        let plunge = plunge.unwrap_or(dip_from_plunge(&dip));
         error_if_out_of_range(&plunge, 0.0, 90.0).unwrap();
 
         // NOTE: this are incorrect. I need to calculate the normal vector to the plane defined by strike and dip
@@ -167,24 +163,12 @@ impl Orient {
     /// Returns an oriented `Plane` while consuming the `Orient` struct.
     fn into_plane(self) -> Plane {
         let (trend, plunge) = self.trend_and_plunge();
-        let strike = if (trend - FRAC_PI_2) <= 0.0 {
-            trend + FRAC_PI_2
-        } else {
-            trend - FRAC_PI_3
-        };
-
-        let dip_direction = if (strike - PI) <= 0.0 {
-            strike + PI
-        } else {
-            strike - PI
-        };
-
-        let dip = FRAC_PI_2 - plunge;
+        let strike = strike_from_trend(&trend.to_degrees());
 
         Plane::new(
-            strike.to_degrees(),
-            dip.to_degrees(),
-            Some(dip_direction.to_degrees()),
+            strike,
+            dip_from_plunge(&plunge.to_degrees()),
+            Some(dip_direction_from_strike(&strike)),
             Some(trend.to_degrees()),
             Some(plunge.to_degrees()),
         )
@@ -195,11 +179,15 @@ impl Orient {
         let n_g = self.normal_g();
         let apparent_trend = (n_g.x / (n_g.x.powi(2) + n_g.y.powi(2)).sqrt()).acos();
 
-        let trend = if n_g.y <= 0.0 {
+        let mut trend = if n_g.y <= 0.0 {
             FRAC_PI_2 + apparent_trend
         } else {
             FRAC_PI_2 - apparent_trend
         };
+
+        if trend < 0.0 {
+            trend += PI * 2.0;
+        }
 
         (trend, -n_g.z.asin())
     }
@@ -236,15 +224,128 @@ impl Orient {
     }
 }
 
-// /**
-// * _________________________________________________
-// * \ (bearing=0.0, inclination=45.0)
-// *  \
-// *   \     //
-// *    \  // Shear plane (alpha=90.0, beta=180.0) = (trend=0.0, plunge=45.0)
-// *     //
-// *   // \
-// * //    \
-// *        \
-// */
-// todo: add tests
+/// Get the dip direction from the strike using decimal degrees.
+fn dip_direction_from_strike(strike: &f64) -> f64 {
+    error_if_out_of_range(strike, 0.0, 360.0).unwrap();
+    let dip_direction = strike + 90.0;
+
+    if dip_direction > 360.0 {
+        dip_direction - 360.0
+    } else {
+        dip_direction
+    }
+}
+
+/// Get the strike from the trend using decimal degrees.
+fn strike_from_trend(trend: &f64) -> f64 {
+    error_if_out_of_range(trend, 0.0, 360.0).unwrap();
+    let strike = trend + 90.0;
+
+    if strike > 360.0 {
+        strike - 360.0
+    } else {
+        strike
+    }
+}
+
+/// Get the plunge from the dip using decimal degrees.
+fn dip_from_plunge(plunge: &f64) -> f64 {
+    error_if_out_of_range(plunge, 0.0, 90.0).unwrap();
+    90.0 - plunge
+}
+
+// ----- Tests -------
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /**
+     * Hole intersecting a plane perpendicular to the borehole axis
+     * will have a trend and plunge equal to the bearing and inclination of the hole.
+     * Note: Plunge will be positive while inclination will be negative by convention.
+     * positive inclinations are reserved for upward drilling in underground settings.
+     * _________________________________________________
+     * \ (bearing=0.0, inclination=-45.0)
+     *  \
+     *   \     //
+     *    \  // Shear plane (alpha=90.0, beta=180.0) = (trend=0.0, plunge=45.0)
+     *     //
+     *   // \
+     * //    \
+     *        \
+     */
+    #[test]
+    fn orient_new_defaults() {
+        let (trend, plunge) =
+            Orient::new(0.0, -45.0, 90.0, 180.0, BHOrientationLine::Top).trend_and_plunge();
+
+        assert_eq!(trend.to_degrees().round(), 0.0);
+        assert_eq!(plunge.to_degrees().round(), 45.0);
+    }
+
+    #[test]
+    fn orient_new_ori_bottom() {
+        let (trend, plunge) =
+            Orient::new(0.0, -45.0, 90.0, 0.0, BHOrientationLine::Bottom).trend_and_plunge();
+
+        assert_eq!(trend.to_degrees().round(), 0.0);
+        assert_eq!(plunge.to_degrees().round(), 45.0);
+    }
+    #[test]
+    #[should_panic]
+    fn orient_new_invalid_bearing() {
+        let bad_bearing = 361.0;
+        Orient::new(bad_bearing, -45.0, 90.0, 180.0, BHOrientationLine::Top);
+    }
+
+    #[test]
+    #[should_panic]
+    fn orient_new_invalid_inclination() {
+        let bad_inclination = -91.0;
+        Orient::new(0.0, bad_inclination, 90.0, 180.0, BHOrientationLine::Top);
+    }
+
+    #[test]
+    #[should_panic]
+    fn orient_new_invalid_alpha() {
+        let bad_alpha = 361.0;
+        Orient::new(0.0, -45.0, bad_alpha, 180.0, BHOrientationLine::Top);
+    }
+
+    #[test]
+    #[should_panic]
+    fn orient_new_invalid_beta() {
+        let bad_beta = 361.0;
+        Orient::new(0.0, -45.0, 90.0, bad_beta, BHOrientationLine::Top);
+    }
+
+    #[test]
+    fn orient_into_plane_returns_plane() {
+        let orient = Orient::new(0.0, -45.0, 90.0, 180.0, BHOrientationLine::Top);
+        let plane = orient.into_plane();
+
+        // assert_matches!(plane, Plane); - its unstable
+        assert_eq!(plane.strike.round(), 90.0);
+        assert_eq!(plane.dip.round(), 45.0);
+        assert_eq!(plane.dip_direction.round(), 180.0);
+        assert_eq!(plane.trend.round(), 0.0);
+        assert_eq!(plane.plunge.round(), 45.0);
+    }
+
+    #[test]
+    fn real_world_orient() {
+        // From measurements conducted on Loulo 3 brownfields drill core in 2015. See test_data
+        let orient = Orient::new(262.7, -55.3, 65.0, 230.0, BHOrientationLine::Top);
+
+        let (trend, plunge) = orient.trend_and_plunge();
+        assert_eq!(plunge.to_degrees().round(), 36.0);
+        assert_eq!(trend.to_degrees().round(), 286.0);
+
+        let plane = orient.into_plane();
+        assert_eq!(plane.dip.round(), 54.0);
+        assert_eq!(plane.strike.round(), 16.0);
+        assert_eq!(plane.dip_direction.round(), 106.0);
+        assert_eq!(plane.trend.round(), 286.0);
+        assert_eq!(plane.plunge.round(), 36.0);
+    }
+}
