@@ -1,6 +1,5 @@
 mod commands;
-use clap::{Parser, Subcommand, ValueEnum};
-use geocalc::{BHOrientationLine, Plane};
+use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -13,29 +12,7 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     Borehole(commands::Borehole),
-
-    OrientOne {
-        #[arg(long)]
-        bearing: f64,
-
-        #[arg(long)]
-        inclination: f64,
-
-        #[arg(long)]
-        alpha: f64,
-
-        #[arg(long)]
-        beta: f64,
-
-        #[arg(long)]
-        bottom: bool,
-    },
-}
-
-#[derive(ValueEnum, Clone)]
-enum Structure {
-    Plane,
-    Lineation,
+    OrientOne(commands::OrientOne),
 }
 
 fn main() {
@@ -45,26 +22,8 @@ fn main() {
         Some(Commands::Borehole(borehole)) => {
             commands::borehole(borehole);
         }
-        Some(Commands::OrientOne {
-            bearing,
-            inclination,
-            alpha,
-            beta,
-            bottom,
-        }) => {
-            let plane = Plane::alpha_beta(
-                bearing,
-                inclination * -1.0,
-                alpha,
-                beta,
-                if bottom {
-                    BHOrientationLine::Bottom
-                } else {
-                    BHOrientationLine::Top
-                },
-            );
-
-            println!("{plane:#?}");
+        Some(Commands::OrientOne(orient_one)) => {
+            commands::orient_one(orient_one);
         }
         None => {
             println!("No command specified");
