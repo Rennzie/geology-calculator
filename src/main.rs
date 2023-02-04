@@ -1,4 +1,6 @@
 mod borehole;
+mod structure;
+mod utils;
 mod validation;
 
 extern crate nalgebra as na;
@@ -7,7 +9,7 @@ use std::fs::File;
 
 use clap::Parser;
 
-use crate::borehole::{measurement::RawMeasurement, BHOrientation, Borehole};
+use crate::borehole::{BHOrientation, Borehole, RawMeasurement};
 
 // use crate::borehole::{measurement::RawMeasurement, Borehole};
 

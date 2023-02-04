@@ -1,10 +1,27 @@
-use super::BHOrientationLine;
-use crate::validation;
-use core::f64::consts::{FRAC_PI_2, FRAC_PI_3, PI};
 use na::{Matrix3, Vector3};
-use nalgebra::Unit;
-use serde::{Deserialize, Serialize};
-use validation::error_if_out_of_range;
+use serde::Deserialize;
+use std::{
+    cmp::Ordering,
+    f64::consts::{FRAC_PI_2, PI},
+};
+
+use crate::{
+    structure::Plane,
+    utils::{dip_direction_from_strike, dip_from_plunge, strike_from_trend},
+    validation::error_if_out_of_range,
+};
+
+#[derive(Debug, Clone, Copy)]
+pub enum BHOrientationLine {
+    Top,
+    Bottom,
+}
+
+impl Default for BHOrientationLine {
+    fn default() -> Self {
+        Self::Top
+    }
+}
 
 #[derive(Debug, Deserialize)]
 pub struct RawMeasurement {
@@ -13,108 +30,101 @@ pub struct RawMeasurement {
     pub beta: f64,
 }
 
-#[derive(Clone, Copy, Debug, Serialize)]
-pub struct Plane {
-    /// The strike of a planar structure in degrees
-    /// Strike is the angle between the north and the line of intersection of the plane with the horizontal plane
-    /// Strike is measured clockwise from north and has a value between 0° and 360°.
-    pub strike: f64,
-    /// The dip of a planar structure in degrees
-    /// The dip is the angle between the horizontal plane and the plane of the structure.
-    /// The dip is measured from the horizontal plane and has a value between 0° and 90°.
-    pub dip: f64,
-    /// The dip direction of a planar structure in degrees
-    /// The dip direction is the angle between the north the direction of the dip. It is perpendicular to the strike in the clockwise direction..
-    /// The dip direction is measured clockwise from north and a positive value between 0° and 360°.
-    pub dip_direction: f64,
-    /// The angle between North and the downward pointing pole (normal vector) projected to the horizontal.
-    /// It can also be thought of as the azimuth of the pole to planar structure.
-    /// The angle is measured clockwise from north and can be between 0° and 360°. (Trend equals strike −90°, and dip direction −180°.)
-    pub trend: f64,
-    /// The angle between the horizontal plane and the planar pole, i.e. the downward pointing normal vector of the plane.
-    /// The value of the angle is positive and can be between 0° and 90°. (plunge equals 90°—dip)
-    pub plunge: f64,
+#[derive(Debug, Clone, Deserialize)]
+pub struct BHOrientation {
+    pub depth: f64,
+    pub bearing: f64,
+    pub inclination: f64,
 }
 
-impl Plane {
+pub struct Borehole {
+    /// Oriented structural measurements with alpha and beta angles (in degrees) relative to the borehole `orientation_line`
+    pub oriented_measurements: Vec<Plane>,
+    /// The location of the orientation line on the borehole
+    pub orientation_line: BHOrientationLine,
+    /// A vector of hole depths with bearing and inclination.
+    /// The fist value MUST have depth=0.0
+    pub hole_orientation: Vec<BHOrientation>,
+}
+
+impl Borehole {
     pub fn new(
-        strike: f64,
-        dip: f64,
-        dip_direction: Option<f64>,
-        trend: Option<f64>,
-        plunge: Option<f64>,
+        orientation_line: BHOrientationLine,
+        raw_measurements: Vec<RawMeasurement>,
+        hole_orientation: Vec<BHOrientation>,
     ) -> Self {
-        error_if_out_of_range(&strike, 0.0, 360.0).unwrap();
-        error_if_out_of_range(&dip, 0.0, 90.0).unwrap();
-
-        let dip_direction = dip_direction.unwrap_or(dip_direction_from_strike(&strike));
-        error_if_out_of_range(&dip_direction, 0.0, 360.0).unwrap();
-
-        let plunge = plunge.unwrap_or(dip_from_plunge(&dip));
-        error_if_out_of_range(&plunge, 0.0, 90.0).unwrap();
-
-        // NOTE: this are incorrect. I need to calculate the normal vector to the plane defined by strike and dip
-        let trend = trend.unwrap_or(strike + 90.0);
-        // error_if_out_of_range(&trend, 0.0, 360.0).unwrap();
-
         Self {
-            strike,
-            dip,
-            dip_direction,
-            trend,
-            plunge,
+            oriented_measurements: map_measurements_to_depths(
+                raw_measurements,
+                &hole_orientation,
+                &orientation_line,
+            ),
+            orientation_line,
+            hole_orientation,
+        }
+    }
+}
+
+fn map_measurements_to_depths(
+    raw_measurements: Vec<RawMeasurement>,
+    raw_orientation: &[BHOrientation],
+    orientation_line: &BHOrientationLine,
+) -> Vec<Plane> {
+    // error if the first raw_orientation depth is not 0.0
+    if raw_orientation[0].depth != 0.0 {
+        panic!("The first raw_orientation depth must be 0.0");
+    }
+
+    let mut depth_pairs: Vec<(f64, f64)> = vec![];
+    let last_index = raw_orientation.len() - 1;
+    for (i, measurement) in raw_orientation.iter().enumerate() {
+        match i {
+            0 => depth_pairs.push((
+                measurement.depth,
+                (raw_orientation[i + 1].depth - measurement.depth) / 2.0,
+            )),
+            _ if i == last_index => depth_pairs.push((
+                (measurement.depth - (measurement.depth - raw_orientation[i - 1].depth) / 2.0),
+                measurement.depth,
+            )),
+            _ if i < last_index => depth_pairs.push((
+                (measurement.depth - (measurement.depth - raw_orientation[i - 1].depth) / 2.0),
+                (measurement.depth + (raw_orientation[i + 1].depth - measurement.depth) / 2.0),
+            )),
+            _ => panic!("This should never happen"),
         }
     }
 
-    /// Create a new `Plane` from oriented borehole measurements.
-    #[must_use]
-    pub fn alpha_beta(
-        bearing: f64,
-        inclination: f64,
-        alpha: f64,
-        beta: f64,
-        orientation_line: BHOrientationLine,
-    ) -> Self {
-        let orient = Orient::new(bearing, inclination, alpha, beta, orientation_line);
-        orient.into_plane()
-    }
-}
+    raw_measurements
+        .into_iter()
+        .map(|measurement| {
+            let index = depth_pairs.binary_search_by(|(first, last)| {
+                if measurement.depth > *first && measurement.depth <= *last {
+                    Ordering::Equal
+                } else if measurement.depth <= *first {
+                    Ordering::Greater
+                } else {
+                    Ordering::Less
+                }
+            });
+            let index = index.unwrap();
 
-fn pole_to_plane(strike: f64, dip: f64, plunge: f64) -> Vector3<f64> {
-    let strike = strike.to_radians();
-    let dip = dip.to_radians();
-    let plunge = plunge.to_radians();
-
-    let rotation_matrix = Matrix3::new(
-        strike.cos(),
-        -strike.sin(),
-        0.0,
-        strike.sin(),
-        strike.cos(),
-        0.0,
-        0.0,
-        0.0,
-        1.0,
-    ) * Matrix3::new(
-        1.0,
-        0.0,
-        0.0,
-        0.0,
-        dip.cos(),
-        -dip.sin(),
-        0.0,
-        dip.sin(),
-        dip.cos(),
-    ) * Matrix3::new(1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, plunge.cos());
-
-    let pole = Unit::new_normalize(rotation_matrix * Vector3::x());
-    pole.into_inner()
+            let orientation = &raw_orientation[index];
+            Plane::alpha_beta(
+                orientation.bearing,
+                orientation.inclination,
+                measurement.alpha,
+                measurement.beta,
+                *orientation_line,
+            )
+        })
+        .collect::<Vec<Plane>>()
 }
 
 /// Definitions from https://www.sciencedirect.com/science/article/pii/S0098300413000551
 /// Internal values are in radians but comments are in degrees
 #[derive(Clone, Copy, Debug)]
-struct Orient {
+pub struct Orient {
     /// The angle between North and the borehole trajectory projected to the horizontal.
     /// The angle is measured clockwise from north and has a positive value between 0° and 360°.
     bearing: f64,
@@ -131,7 +141,7 @@ struct Orient {
 }
 
 impl Orient {
-    fn new(
+    pub fn new(
         bearing: f64,
         inclination: f64,
         alpha: f64,
@@ -161,7 +171,7 @@ impl Orient {
     }
 
     /// Returns an oriented `Plane` while consuming the `Orient` struct.
-    fn into_plane(self) -> Plane {
+    pub fn into_plane(self) -> Plane {
         let (trend, plunge) = self.trend_and_plunge();
         let strike = strike_from_trend(&trend.to_degrees());
 
@@ -224,36 +234,6 @@ impl Orient {
     }
 }
 
-/// Get the dip direction from the strike using decimal degrees.
-fn dip_direction_from_strike(strike: &f64) -> f64 {
-    error_if_out_of_range(strike, 0.0, 360.0).unwrap();
-    let dip_direction = strike + 90.0;
-
-    if dip_direction > 360.0 {
-        dip_direction - 360.0
-    } else {
-        dip_direction
-    }
-}
-
-/// Get the strike from the trend using decimal degrees.
-fn strike_from_trend(trend: &f64) -> f64 {
-    error_if_out_of_range(trend, 0.0, 360.0).unwrap();
-    let strike = trend + 90.0;
-
-    if strike > 360.0 {
-        strike - 360.0
-    } else {
-        strike
-    }
-}
-
-/// Get the plunge from the dip using decimal degrees.
-fn dip_from_plunge(plunge: &f64) -> f64 {
-    error_if_out_of_range(plunge, 0.0, 90.0).unwrap();
-    90.0 - plunge
-}
-
 // ----- Tests -------
 #[cfg(test)]
 mod tests {
@@ -291,6 +271,7 @@ mod tests {
         assert_eq!(trend.to_degrees().round(), 0.0);
         assert_eq!(plunge.to_degrees().round(), 45.0);
     }
+
     #[test]
     #[should_panic]
     fn orient_new_invalid_bearing() {
@@ -328,8 +309,8 @@ mod tests {
         assert_eq!(plane.strike.round(), 90.0);
         assert_eq!(plane.dip.round(), 45.0);
         assert_eq!(plane.dip_direction.round(), 180.0);
-        assert_eq!(plane.trend.round(), 0.0);
-        assert_eq!(plane.plunge.round(), 45.0);
+        assert_eq!(plane.pole.trend.round(), 0.0);
+        assert_eq!(plane.pole.plunge.round(), 45.0);
     }
 
     #[test]
@@ -345,7 +326,9 @@ mod tests {
         assert_eq!(plane.dip.round(), 54.0);
         assert_eq!(plane.strike.round(), 16.0);
         assert_eq!(plane.dip_direction.round(), 106.0);
-        assert_eq!(plane.trend.round(), 286.0);
-        assert_eq!(plane.plunge.round(), 36.0);
+        assert_eq!(plane.pole.trend.round(), 286.0);
+        assert_eq!(plane.pole.plunge.round(), 36.0);
     }
 }
+
+// todo: add some tests
