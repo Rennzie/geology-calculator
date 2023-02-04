@@ -1,4 +1,4 @@
 [workspace]
-members = ["core", "cli"]
+members = ["geocalc", "cli"]
 
 

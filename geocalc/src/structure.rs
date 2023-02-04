@@ -38,6 +38,7 @@ pub struct Plane {
     /// The dip direction is the angle between the north the direction of the dip. It is perpendicular to the strike in the clockwise direction..
     /// The dip direction is measured clockwise from north and a positive value between 0° and 360°.
     pub dip_direction: f64,
+    #[serde(flatten)]
     pub pole: Lineation,
 }
 

@@ -1,59 +1,73 @@
-use clap::Parser;
-use core::{BHOrientation, BHOrientationLine, Borehole, RawMeasurement};
-use std::fs::File;
+mod commands;
+use clap::{Parser, Subcommand, ValueEnum};
+use geocalc::{BHOrientationLine, Plane};
 
-// use crate::borehole::{measurement::RawMeasurement, Borehole};
-
-#[derive(Parser, Debug)]
+#[derive(Parser)]
 #[command(author, version, about, long_about = None)]
-struct Args {
-    /// Path to csv file containing borehole orientation data
-    /// Expected format:
-    /// depth,bearing,inclination
-    #[arg(long)]
-    dh_orientation: String,
+#[command(propagate_version = true)]
+struct Cli {
+    #[command(subcommand)]
+    command: Option<Commands>,
+}
 
-    /// Path to csv file containing borehole measurements
-    /// Expected format:
-    /// depth,alpha,beta
-    #[arg(long)]
-    dh_measurements: String,
+#[derive(Subcommand)]
+enum Commands {
+    Borehole(commands::Borehole),
 
-    /// Path to where the output CSV file should be written
-    #[arg(short, long)]
-    output: Option<String>,
+    OrientOne {
+        #[arg(long)]
+        bearing: f64,
+
+        #[arg(long)]
+        inclination: f64,
+
+        #[arg(long)]
+        alpha: f64,
+
+        #[arg(long)]
+        beta: f64,
+
+        #[arg(long)]
+        bottom: bool,
+    },
+}
+
+#[derive(ValueEnum, Clone)]
+enum Structure {
+    Plane,
+    Lineation,
 }
 
 fn main() {
-    let args = Args::parse();
+    let cli = Cli::parse();
 
-    let mut ori_rdr = csv::Reader::from_path(args.dh_orientation).unwrap();
-    let hole_orientations = ori_rdr
-        .deserialize()
-        .into_iter()
-        .map(|result| {
-            let record: BHOrientation = result.unwrap();
-            record
-        })
-        .collect();
+    match cli.command {
+        Some(Commands::Borehole(borehole)) => {
+            commands::borehole(borehole);
+        }
+        Some(Commands::OrientOne {
+            bearing,
+            inclination,
+            alpha,
+            beta,
+            bottom,
+        }) => {
+            let plane = Plane::alpha_beta(
+                bearing,
+                inclination * -1.0,
+                alpha,
+                beta,
+                if bottom {
+                    BHOrientationLine::Bottom
+                } else {
+                    BHOrientationLine::Top
+                },
+            );
 
-    let mut ori_rdr = csv::Reader::from_path(args.dh_measurements).unwrap();
-    let raw_measurements = ori_rdr
-        .deserialize()
-        .into_iter()
-        .map(|result| {
-            let record: RawMeasurement = result.unwrap();
-            record
-        })
-        .collect();
-
-    let dh123 = Borehole::new(BHOrientationLine::Top, raw_measurements, hole_orientations);
-    println!("{:#?}", dh123.oriented_measurements);
-
-    let file = File::create(args.output.unwrap()).unwrap();
-    let mut writer = csv::Writer::from_writer(file);
-    for measurement in dh123.oriented_measurements {
-        writer.serialize(measurement).unwrap();
+            println!("{plane:#?}");
+        }
+        None => {
+            println!("No command specified");
+        }
     }
-    writer.flush().unwrap();
 }

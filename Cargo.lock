@@ -89,16 +89,8 @@ name = "cli"
 version = "0.1.0"
 dependencies = [
  "clap",
- "core",
  "csv",
-]
-
-[[package]]
-name = "core"
-version = "0.1.0"
-dependencies = [
- "nalgebra",
- "serde",
+ "geocalc",
 ]
 
 [[package]]
@@ -142,6 +134,14 @@ checksum = "aa68f1b12764fab894d2755d2518754e71b4fd80ecfb822714a1206c2aab39bf"
 dependencies = [
  "cc",
  "libc",
+]
+
+[[package]]
+name = "geocalc"
+version = "0.1.0"
+dependencies = [
+ "nalgebra",
+ "serde",
 ]
 
 [[package]]
