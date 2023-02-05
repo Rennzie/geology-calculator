@@ -9,3 +9,12 @@ body {
 code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New', monospace;
 }
+
+#canvas-container {
+  width: 100vw;
+  height: 100vh;
+  background-color: #b9bbbb;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}

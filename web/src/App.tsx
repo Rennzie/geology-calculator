@@ -1,54 +1,48 @@
-import './App.css';
+import './index.css';
+import { Canvas, ThreeElements, useFrame } from '@react-three/fiber';
+import { useRef, useState } from 'react';
+import { Mesh } from 'three';
 
-import React, { useState } from 'react';
-
-import logo from './logo.svg';
-
-function App() {
-  const [count, setCount] = useState(0);
-
+function Box(props: ThreeElements['mesh']) {
+  // This reference will give us direct access to the mesh
+  const mesh = useRef<Mesh>(null!);
+  // Set up state for the hovered and active state
+  const [hovered, setHover] = useState(false);
+  const [active, setActive] = useState(false);
+  // Subscribe this component to the render-loop, rotate the mesh every frame
+  useFrame((state, delta) => {
+    // mesh.current.rotation.x += delta;
+    mesh.current.rotation.y -= delta / 4;
+  });
+  // Return view, these are regular three.js elements expressed in JSX
   return (
-    <div className="App">
-      <header className="App-header">
-        <img src={logo} className="App-logo" alt="logo" />
-        <p className="header">
-          🚀 Vite + React + Typescript 🤘 & <br />
-          Eslint 🔥+ Prettier
-        </p>
+    <mesh
+      {...props}
+      ref={mesh}
+      // scale={active ? 1.5 : 1}
 
-        <div className="body">
-          <button onClick={() => setCount((count) => count + 1)}>
-            🪂 Click me : {count}
-          </button>
-
-          <p> Don&apos;t forgot to install Eslint and Prettier in Your Vscode.</p>
-
-          <p>
-            Mess up the code in <code>App.tsx </code> and save the file.
-          </p>
-          <p>
-            <a
-              className="App-link"
-              href="https://reactjs.org"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Learn React
-            </a>
-            {' | '}
-            <a
-              className="App-link"
-              href="https://vitejs.dev/guide/features.html"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Vite Docs
-            </a>
-          </p>
-        </div>
-      </header>
-    </div>
+      onClick={(event) => {
+        mesh.current.rotation.x += Math.PI / 2;
+        return setActive(!active);
+      }}
+      onPointerOver={(event) => setHover(true)}
+      onPointerOut={(event) => setHover(false)}
+      position={[0, 0, 0]}
+    >
+      <sphereGeometry args={[3, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2]} />
+      <meshBasicMaterial wireframe={true} color={'grey'} />
+    </mesh>
   );
 }
 
-export default App;
+export function App() {
+  return (
+    <div id="canvas-container">
+      <ambientLight args={[0xff0000]} intensity={0.1} />
+      <directionalLight position={[0, 0, 5]} intensity={0.5} />
+      <Canvas>
+        <Box />
+      </Canvas>
+    </div>
+  );
+}
